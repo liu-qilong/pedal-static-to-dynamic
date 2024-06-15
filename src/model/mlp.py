@@ -6,6 +6,7 @@ from src.tool.registry import MODEL_REGISTRY
 class MLP(nn.Module):
     def __init__(self, input_size: int = 198, hidden_size: int = 256, output_size: int = 198):
         super().__init__()
+        
         self.model = nn.Sequential(
             nn.Linear(input_size, hidden_size),
             nn.Sigmoid(),

@@ -10,9 +10,9 @@ from src.tool.registry import DATASET_REGISTRY
 
 @DATASET_REGISTRY.register()
 class Pedar_Dataset_static2dynamic(Dataset):
-    def __init__(self, static_path: str, dynamic_path: str, sense_range: float = 600, dtype = torch.float32, transform = None, target_transform = None):
-        self.pedar_static = pd.read_pickle(static_path)
-        self.pedar_dynamic = pd.read_pickle(dynamic_path)
+    def __init__(self, pedar_static: str, pedar_dynamic: str, sense_range: float = 600, dtype = torch.float32, transform = None, target_transform = None):
+        self.pedar_static = pd.read_pickle(pedar_static)
+        self.pedar_dynamic = pd.read_pickle(pedar_dynamic)
         self.index = self.pedar_static.index
         
         self.dtype = dtype

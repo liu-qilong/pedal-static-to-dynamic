@@ -1,12 +1,26 @@
-data:
-  dataset: 'Pedar_Dataset_static2dynamic'
-  dataloader: 'DataLoader'
+dataset:
+  name: 'Pedar_Dataset_static2dynamic'
   train_ratio: 0.8
-  batch_size: 32
+  args:
+    pedar_static: 'data/processed/pedar_static.pkl'
+    pedar_dynamic: 'data/processed/pedar_dynamic.pkl'
+    sense_range: 600
+dataloader:
+  name: 'DataLoader'
+  args:
+    batch_size: 32
+    shuffle: True
 model:
   name: 'MLP'
-train:
-  loss: 'MSELoss'
-  optimizer: 'SGD'
-  lr: 0.1
+  args:
+    input_size: 198
+    hidden_size: 256
+    output_size: 198
+loss:
+  name: 'MSELoss'
+  args: {}
+optimizer: 
+  name: 'SGD'
   epoch: 100
+  args:
+    lr: 0.1

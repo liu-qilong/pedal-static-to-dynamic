@@ -30,15 +30,15 @@ if __name__ == '__main__':
     print('-'*50)
 
     # load data
-    full_dataset = DATASET_REGISTRY[opt.data.dataset](static_path='data/processed/pedar_static.pkl', dynamic_path='data/processed/pedar_dynamic.pkl')
-    train_dataset, test_dataset = random_split(full_dataset, [opt.data.train_ratio, 1 - opt.data.train_ratio])
+    full_dataset = DATASET_REGISTRY[opt.dataset.name](**opt.dataset.args)
+    train_dataset, test_dataset = random_split(full_dataset, [opt.dataset.train_ratio, 1 - opt.dataset.train_ratio])
 
-    train_dataloader = DATALOADER_REGISTRY[opt.data.dataloader](train_dataset, batch_size=opt.data.batch_size, shuffle=True)
-    test_dataloader = DATALOADER_REGISTRY[opt.data.dataloader](test_dataset, batch_size=opt.data.batch_size, shuffle=True)
+    train_dataloader = DATALOADER_REGISTRY[opt.dataloader.name](train_dataset, **opt.dataloader.args)
+    test_dataloader = DATALOADER_REGISTRY[opt.dataloader.name](test_dataset, **opt.dataloader.args)
 
     # launch training
-    model = MODEL_REGISTRY[opt.model.name](hidden_size=256).to(device)
-    loss = LOSS_REGISTRY[opt.train.loss]()
-    optimizer = OPTIMIZER_REGISTRY[opt.train.optimizer](params=model.parameters(), lr=opt.train.lr)
+    model = MODEL_REGISTRY[opt.model.name](**opt.model.args).to(device)
+    loss = LOSS_REGISTRY[opt.loss.name](**opt.loss.args)
+    optimizer = OPTIMIZER_REGISTRY[opt.optimizer.name](**opt.optimizer.args, params=model.parameters())
 
-    results = train.train(model, train_dataloader, test_dataloader, optimizer, loss, opt.train.epoch, device)
+    results = train.train(model, train_dataloader, test_dataloader, optimizer, loss, opt.optimizer.epoch, device)
