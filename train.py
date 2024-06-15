@@ -1,3 +1,5 @@
+import argparse
+
 import torch
 from torch.utils.data import random_split
 
@@ -18,8 +20,11 @@ if __name__ == '__main__':
         device = 'cpu'
 
     # load options
-    path = '/Users/knpob/Territory/Kolmo/code/fe-footprint-to-pressure/experiment/20210615/'
-    opt = config.load_config(path)
+    parser = argparse.ArgumentParser('training script')
+    parser.add_argument('--path', '-p', help="The path to the experiment folder where the configuration sheet, network weights, and other results are stored.", type=str, required=True)
+    args = parser.parse_args()
+    print(f'load configrations from: {args.path}')
+    opt = config.load_config(args.path)
     print('-'*50)
     print(opt)
     print('-'*50)
