@@ -2,7 +2,9 @@ from typing import Dict, List, Tuple
 from pathlib import Path
 
 import torch
+import pandas as pd
 from tqdm.auto import tqdm
+from yacs.config import CfgNode
 
 def train_step(
         model: torch.nn.Module, 
@@ -61,17 +63,16 @@ def test_step(
 
 
 def log_step(
-        epoch: int,
-        epochs: int,
-        save_interval: int,
-        path: str,
+        opt: CfgNode,
         logs: Dict[str, List],
         model: torch.nn.Module,
         optimizer: torch.optim.Optimizer,
     ):
     # print and save logs
+    epoch = logs['epoch'][-1]
+    epochs = opt.optimizer.epoch
     print(
-        f"epoch: {epoch + 1} | "
+        f"epoch: {epoch} | "
         f"train_loss: {logs['train_loss'][-1]:.4f} | "
         f"test_loss: {logs['test_loss'][-1]:.4f}"
     )
@@ -82,35 +83,35 @@ def log_step(
     else:
         is_improved = logs['test_loss'][-1] < min(logs['test_loss'][:-1])
 
-    if is_improved and (epoch % save_interval == 0 or epoch == epochs - 1):
-        torch.save(logs, Path(path) / 'logs.pth')
-        print(f'logs saved to {Path(path) / "logs.pth"}')
+    if is_improved and (epoch % opt.save_interval == 0 or epoch == epochs - 1):
+        # torch.save(logs, Path(path) / 'logs.pth')
+        pd.DataFrame(logs).to_csv(Path(opt.path) / 'logs.csv', index=False)
+        print(f'logs saved to {Path(opt.path) / "logs.csv"}')
 
-        torch.save(model.state_dict(), Path(path) / 'model.pth')
-        print(f'model saved to {Path(path) / "model.pth"}')
+        torch.save(model.state_dict(), Path(opt.path) / 'model.pth')
+        print(f'model saved to {Path(opt.path) / "model.pth"}')
 
-        torch.save(optimizer.state_dict(), Path(path) / 'optimizer.pth')
-        print(f'optimizer saved {Path(path) / "optimizer.pth"}')
+        torch.save(optimizer.state_dict(), Path(opt.path) / 'optimizer.pth')
+        print(f'optimizer saved {Path(opt.path) / "optimizer.pth"}')
 
 
 def train_loop(
-        path: str,
+        opt: CfgNode,
         model: torch.nn.Module, 
         train_dataloader: torch.utils.data.DataLoader, 
         test_dataloader: torch.utils.data.DataLoader, 
         optimizer: torch.optim.Optimizer,
         loss_fn: torch.nn.Module,
-        epochs: int,
         device: torch.device,
-        save_interval: int = 1,
         ) -> Dict[str, List]:
     # create logs dict
     logs = {
-        "train_loss": [],
-        "test_loss": [],
+        'epoch': [],
+        'train_loss': [],
+        'test_loss': [],
     }
 
-    for epoch in tqdm(range(epochs)):
+    for epoch in tqdm(range(opt.optimizer.epoch)):
         train_loss = train_step(
             model=model,
             dataloader=train_dataloader,
@@ -127,8 +128,9 @@ def train_loop(
             )
         
         # save logs and states
-        logs["train_loss"].append(train_loss)
-        logs["test_loss"].append(test_loss)
-        log_step(epoch, epochs, save_interval, path, logs, model, optimizer)
+        logs['epoch'].append(epoch)
+        logs['train_loss'].append(train_loss)
+        logs['test_loss'].append(test_loss)
+        log_step(opt, logs, model, optimizer)
 
     return logs

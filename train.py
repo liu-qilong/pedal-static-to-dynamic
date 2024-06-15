@@ -32,6 +32,9 @@ if __name__ == '__main__':
     print(opt)
     print('-'*50)
 
+    opt.path = args.path
+    opt.save_interval = args.save_interval
+
     # load data
     full_dataset = DATASET_REGISTRY[opt.dataset.name](**opt.dataset.args)
     train_dataset, test_dataset = random_split(full_dataset, [opt.dataset.train_ratio, 1 - opt.dataset.train_ratio])
@@ -40,8 +43,8 @@ if __name__ == '__main__':
     test_dataloader = DATALOADER_REGISTRY[opt.dataloader.name](test_dataset, **opt.dataloader.args)
 
     # launch training
-    model = MODEL_REGISTRY[opt.model.name](**opt.model.args).to(device)
-    loss = LOSS_REGISTRY[opt.loss.name](**opt.loss.args)
-    optimizer = OPTIMIZER_REGISTRY[opt.optimizer.name](**opt.optimizer.args, params=model.parameters())
+    model_obj = MODEL_REGISTRY[opt.model.name](**opt.model.args).to(device)
+    loss_obj = LOSS_REGISTRY[opt.loss.name](**opt.loss.args)
+    optimizer_obj = OPTIMIZER_REGISTRY[opt.optimizer.name](**opt.optimizer.args, params=model_obj.parameters())
 
-    logs = train.train_loop(args.path, model, train_dataloader, test_dataloader, optimizer, loss, opt.optimizer.epoch, device, args.save_interval)
+    logs = train.train_loop(opt, model_obj, train_dataloader, test_dataloader, optimizer_obj, loss_obj, device)

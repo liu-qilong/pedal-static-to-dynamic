@@ -19,6 +19,10 @@ model:
 loss:
   name: 'MSELoss'
   args: {}
+metric:
+  MAE:
+    name: 'MAELoss'
+    args: {}
 optimizer: 
   name: 'SGD'
   epoch: 100
