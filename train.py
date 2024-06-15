@@ -19,11 +19,14 @@ if __name__ == '__main__':
     else:
         device = 'cpu'
 
-    # load options
+    # parse command line arguments
     parser = argparse.ArgumentParser('training script')
     parser.add_argument('--path', '-p', help="The path to the experiment folder where the configuration sheet, network weights, and other results are stored.", type=str, required=True)
+    parser.add_argument('--save-interval', '-s', help="Save weights and optimizer after each n epoches if test loss improves.", type=int, default=1)
     args = parser.parse_args()
-    print(f'load configrations from: {args.path}')
+
+    # load options
+    print(f'load configrations from {args.path}')
     opt = config.load_config(args.path)
     print('-'*50)
     print(opt)
@@ -41,4 +44,4 @@ if __name__ == '__main__':
     loss = LOSS_REGISTRY[opt.loss.name](**opt.loss.args)
     optimizer = OPTIMIZER_REGISTRY[opt.optimizer.name](**opt.optimizer.args, params=model.parameters())
 
-    results = train.train(model, train_dataloader, test_dataloader, optimizer, loss, opt.optimizer.epoch, device)
+    logs = train.train_loop(args.path, model, train_dataloader, test_dataloader, optimizer, loss, opt.optimizer.epoch, device, args.save_interval)
