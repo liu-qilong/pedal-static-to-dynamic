@@ -1,0 +1,12 @@
+data:
+  dataset: 'Pedar_Dataset_static2dynamic'
+  dataloader: 'DataLoader'
+  train_ratio: 0.8
+  batch_size: 32
+model:
+  name: 'MLP'
+train:
+  loss: 'MSELoss'
+  optimizer: 'SGD'
+  lr: 0.1
+  epoch: 100
