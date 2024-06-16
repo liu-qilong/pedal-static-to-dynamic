@@ -1,145 +1,132 @@
-from typing import Dict, List, Tuple
-from pathlib import Path
-
 import torch
+from torch.utils.data import random_split
+
 import pandas as pd
 from tqdm.auto import tqdm
-from yacs.config import CfgNode
+from pathlib import Path
 
-from src.tool.registry import METRIC_REGISTRY
+from src.tool.registry import DATASET_REGISTRY, DATALOADER_REGISTRY, MODEL_REGISTRY, LOSS_REGISTRY, METRIC_REGISTRY, OPTIMIZER_REGISTRY, SCRIPT_REGISTRY
 
-def train_step(
-        logs: dict,
-        model: torch.nn.Module, 
-        dataloader: torch.utils.data.DataLoader, 
-        loss_fn: torch.nn.Module, 
-        optimizer: torch.optim.Optimizer,
-        device: torch.device,
-        ):
-    # put model in train mode
-    model.train()
-    train_loss = 0
+@SCRIPT_REGISTRY.register()
+class BasicTrainScript():
+    def __init__(self, opt):
+        self.opt = opt
+        
+        # device select
+        if opt.device_select == 'auto':
+            if torch.cuda.is_available():
+                self.device = 'cuda'
+            if torch.backends.mps.is_available():
+                self.device = 'mps'
+            else:
+                self.device = 'cpu'
+        else:
+            self.device = opt.device_select
 
-    for batch, (X, y) in enumerate(dataloader):
-        # send data to device
-        X, y = X.to(device), y.to(device)
+        # init logs dict
+        self.logs = {
+            'epoch': [],
+            'train_loss': [],
+            'test_loss': [],
+        }
 
-        # forward pass
-        y_pred = model(X)
-        loss = loss_fn(y_pred, y)
-        train_loss += loss.item() 
+        # init metric dict
+        self.metric_dict = {}
 
-        # loss backward
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+        for key, value in opt.metric.items():
+            self.metric_dict[key] = METRIC_REGISTRY[value.name](**value.args)
+            self.logs[key] = []
 
-    # append loss
-    train_loss = train_loss / len(dataloader)
-    logs['train_loss'].append(train_loss)
+    def load_data(self):
+        self.full_dataset = DATASET_REGISTRY[self.opt.dataset.name](**self.opt.dataset.args)
+        self.train_dataset, self.test_dataset = random_split(self.full_dataset, [self.opt.dataset.train_ratio, 1 - self.opt.dataset.train_ratio])
 
+        self.train_dataloader = DATALOADER_REGISTRY[self.opt.dataloader.name](self.train_dataset, **self.opt.dataloader.args)
+        self.test_dataloader = DATALOADER_REGISTRY[self.opt.dataloader.name](self.test_dataset, **self.opt.dataloader.args)
 
-def test_step(
-        logs: dict,
-        model: torch.nn.Module, 
-        dataloader: torch.utils.data.DataLoader, 
-        loss_fn: torch.nn.Module,
-        device: torch.device,
-        metric_dict: dict,
-        ):
-    # put model in eval mode
-    model.eval() 
-    test_loss = 0
+    def train_prep(self, use_pretrain: bool = False):
+        self.model = MODEL_REGISTRY[self.opt.model.name](**self.opt.model.args).to(self.device)
+        self.loss_fn = LOSS_REGISTRY[self.opt.loss.name](**self.opt.loss.args)
+        self.optimizer = OPTIMIZER_REGISTRY[self.opt.optimizer.name](**self.opt.optimizer.args, params=self.model.parameters())
 
-    for key, metric_fn in metric_dict.items():
-        logs[key].append(0)
+        if use_pretrain:
+            pass
 
-    # turn on inference context manager
-    with torch.inference_mode():
-        for batch, (X, y) in enumerate(dataloader):
-            # send data to target device
-            X, y = X.to(device), y.to(device)
+    def train_loop(self):
+        for epoch in (pdar := tqdm(range(self.opt.optimizer.epochs))):
+            self.logs['epoch'].append(epoch)
+            self._train_step()
+            self._test_step()
+            self._log_step()
+            pdar.set_description(f'epoch {epoch} | train_loss {self.logs["train_loss"][-1]:.4f} | test_loss {self.logs["test_loss"][-1]:.4f}')
+
+    def _train_step(self):
+        # put model in train mode
+        self.model.train()
+        train_loss = 0
+
+        for batch, (X, y) in enumerate(self.train_dataloader):
+            # send data to device
+            X, y = X.to(self.device), y.to(self.device)
 
             # forward pass
-            y_pred = model(X)
+            y_pred = self.model(X)
+            loss = self.loss_fn(y_pred, y)
+            train_loss += loss.item() 
 
-            # loss calculation
-            loss = loss_fn(y_pred, y)
-            test_loss += loss.item()
+            # loss backward
+            self.optimizer.zero_grad()
+            loss.backward()
+            self.optimizer.step()
 
-            # metric calculation
-            for key, metric_fn in metric_dict.items():
-                logs[key][-1] += metric_fn(y, y_pred).item()
+        # append loss
+        train_loss = train_loss / len(self.train_dataloader)
+        self.logs['train_loss'].append(train_loss)
 
-    # append loss & metrics
-    test_loss = test_loss / len(dataloader)
-    logs['test_loss'].append(test_loss)
+    def _test_step(self):
+        # put model in eval mode
+        self.model.eval()
+        test_loss = 0
 
-    for key, metric_fn in metric_dict.items():
-        logs[key][-1] = logs[key][-1] / len(dataloader)
+        for key, metric_fn in self.metric_dict.items():
+            self.logs[key].append(0)
 
+        # turn on inference context manager
+        with torch.inference_mode():
+            for batch, (X, y) in enumerate(self.test_dataloader):
+                # send data to target device
+                X, y = X.to(self.device), y.to(self.device)
 
-def log_step(
-        opt: CfgNode,
-        logs: Dict[str, List],
-        model: torch.nn.Module,
-        optimizer: torch.optim.Optimizer,
-    ):
-    # print and save logs
-    epoch = logs['epoch'][-1]
-    epochs = opt.optimizer.epoch
-    print(
-        f"epoch: {epoch} | "
-        f"train_loss: {logs['train_loss'][-1]:.4f} | "
-        f"test_loss: {logs['test_loss'][-1]:.4f}"
-    )
+                # forward pass
+                y_pred = self.model(X)
 
-    # save logs, model, and optimizer if test loss is improved
-    if epoch == 0:
-        is_improved = True
-    else:
-        is_improved = logs['test_loss'][-1] < min(logs['test_loss'][:-1])
+                # loss calculation
+                loss = self.loss_fn(y_pred, y)
+                test_loss += loss.item()
 
-    if is_improved and (epoch % opt.save_interval == 0 or epoch == epochs - 1):
-        # torch.save(logs, Path(path) / 'logs.pth')
-        pd.DataFrame(logs).to_csv(Path(opt.path) / 'logs.csv', index=False)
-        print(f'logs saved to {Path(opt.path) / "logs.csv"}')
+                # metric calculation
+                for key, metric_fn in self.metric_dict.items():
+                    self.logs[key][-1] += metric_fn(y, y_pred).item()
 
-        torch.save(model.state_dict(), Path(opt.path) / 'model.pth')
-        print(f'model saved to {Path(opt.path) / "model.pth"}')
+        # append loss & metrics
+        test_loss = test_loss / len(self.test_dataloader)
+        self.logs['test_loss'].append(test_loss)
 
-        torch.save(optimizer.state_dict(), Path(opt.path) / 'optimizer.pth')
-        print(f'optimizer saved {Path(opt.path) / "optimizer.pth"}')
+        for key, metric_fn in self.metric_dict.items():
+            self.logs[key][-1] = self.logs[key][-1] / len(self.test_dataloader)
 
+    def _log_step(self):
+        # print and save logs
+        epoch = self.logs['epoch'][-1]
 
-def train_loop(
-        opt: CfgNode,
-        model: torch.nn.Module, 
-        train_dataloader: torch.utils.data.DataLoader, 
-        test_dataloader: torch.utils.data.DataLoader, 
-        optimizer: torch.optim.Optimizer,
-        loss_fn: torch.nn.Module,
-        device: torch.device,
-        ) -> Dict[str, List]:
-    # create logs dict
-    logs = {
-        'epoch': [],
-        'train_loss': [],
-        'test_loss': [],
-    }
+        # save logs, model, and optimizer if test loss is improved
+        if epoch == 0:
+            is_improved = True
+        else:
+            is_improved = self.logs['test_loss'][-1] < min(self.logs['test_loss'][:-1])
 
-    # metric dict
-    metric_dict = {}
-
-    for key, value in opt.metric.items():
-        metric_dict[key] = METRIC_REGISTRY[value.name](**value.args)
-        logs[key] = []
-
-    # training loop
-    for epoch in tqdm(range(opt.optimizer.epoch)):
-        logs['epoch'].append(epoch)
-        train_step(logs, model, train_dataloader, loss_fn, optimizer, device)
-        test_step(logs, model, test_dataloader, loss_fn, device, metric_dict)        
-        log_step(opt, logs, model, optimizer)
-
-    return logs
+        if is_improved and (epoch % self.opt.save_interval == 0 or epoch == self.opt.optimizer.epochs - 1):
+            # torch.save(logs, Path(path) / 'logs.pth')
+            pd.DataFrame(self.logs).to_csv(Path(self.opt.path) / 'logs.csv', index=False)
+            torch.save(self.model.state_dict(), Path(self.opt.path) / 'model.pth')
+            torch.save(self.optimizer.state_dict(), Path(self.opt.path) / 'optimizer.pth')

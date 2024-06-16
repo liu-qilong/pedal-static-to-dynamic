@@ -1,50 +1,30 @@
-import argparse
-
 import torch
-from torch.utils.data import random_split
+import argparse
+from pathlib import Path
 
-from src.tool import config, train
-from src import dataset, dataloader, model, loss, metric, optimizer
-from src.tool.registry import DATASET_REGISTRY, DATALOADER_REGISTRY, MODEL_REGISTRY, LOSS_REGISTRY, METRIC_REGISTRY, OPTIMIZER_REGISTRY
-
+from src.tool.registry import SCRIPT_REGISTRY
+from src.tool import config
 
 if __name__ == '__main__':
-    # torch setup
-    torch.manual_seed(0)
-
-    if torch.cuda.is_available():
-        device = 'cuda'
-    if torch.backends.mps.is_available():
-        device = 'mps'
-    else:
-        device = 'cpu'
-
     # parse command line arguments
     parser = argparse.ArgumentParser('training script')
     parser.add_argument('--path', '-p', help="The path to the experiment folder where the configuration sheet, network weights, and other results are stored.", type=str, required=True)
-    parser.add_argument('--save-interval', '-s', help="Save weights and optimizer after each n epoches if test loss improves.", type=int, default=10)
     args = parser.parse_args()
 
     # load options
-    print(f'load configrations from {args.path}')
     opt = config.load_config(args.path)
+    opt.path = args.path
+
+    print(f'loaded configrations from {Path(args.path) / "config.yaml"}')
     print('-'*50)
     print(opt)
     print('-'*50)
 
-    opt.path = args.path
-    opt.save_interval = args.save_interval
+    # torch setup
+    torch.manual_seed(0)
 
-    # load data
-    full_dataset = DATASET_REGISTRY[opt.dataset.name](**opt.dataset.args)
-    train_dataset, test_dataset = random_split(full_dataset, [opt.dataset.train_ratio, 1 - opt.dataset.train_ratio])
-
-    train_dataloader = DATALOADER_REGISTRY[opt.dataloader.name](train_dataset, **opt.dataloader.args)
-    test_dataloader = DATALOADER_REGISTRY[opt.dataloader.name](test_dataset, **opt.dataloader.args)
-
-    # launch training
-    model_obj = MODEL_REGISTRY[opt.model.name](**opt.model.args).to(device)
-    loss_obj = LOSS_REGISTRY[opt.loss.name](**opt.loss.args)
-    optimizer_obj = OPTIMIZER_REGISTRY[opt.optimizer.name](**opt.optimizer.args, params=model_obj.parameters())
-
-    logs = train.train_loop(opt, model_obj, train_dataloader, test_dataloader, optimizer_obj, loss_obj, device)
+    # launch training script
+    train_script = SCRIPT_REGISTRY[opt.train_script](opt)
+    train_script.load_data()
+    train_script.train_prep()
+    train_script.train_loop()
