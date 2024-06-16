@@ -1,6 +1,7 @@
 train_script: 'BasicTrainScript'
 save_interval: 10
 device_select: 'auto'
+use_pretrain: True
 dataset:
   name: 'Pedar_Dataset_static2dynamic'
   train_ratio: 0.8

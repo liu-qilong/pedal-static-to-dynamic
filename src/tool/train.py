@@ -44,13 +44,14 @@ class BasicTrainScript():
         self.train_dataloader = DATALOADER_REGISTRY[self.opt.dataloader.name](self.train_dataset, **self.opt.dataloader.args)
         self.test_dataloader = DATALOADER_REGISTRY[self.opt.dataloader.name](self.test_dataset, **self.opt.dataloader.args)
 
-    def train_prep(self, use_pretrain: bool = False):
+    def train_prep(self):
         self.model = MODEL_REGISTRY[self.opt.model.name](**self.opt.model.args).to(self.device)
         self.loss_fn = LOSS_REGISTRY[self.opt.loss.name](**self.opt.loss.args)
         self.optimizer = OPTIMIZER_REGISTRY[self.opt.optimizer.name](**self.opt.optimizer.args, params=self.model.parameters())
 
-        if use_pretrain:
-            pass
+        if self.opt.use_pretrain:
+            self.model.load_state_dict(torch.load(Path(self.opt.path) / 'model.pth'))
+            self.optimizer.load_state_dict(torch.load(Path(self.opt.path) / 'optimizer.pth'))
 
     def train_loop(self):
         for epoch in (pdar := tqdm(range(self.opt.optimizer.epochs))):
