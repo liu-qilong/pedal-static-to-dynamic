@@ -23,6 +23,8 @@ class BasicTrainScript():
         else:
             self.device = opt.device_select
 
+        print(f'training on {self.device}...')
+
         # init logs dict
         self.logs = {
             'epoch': [],
