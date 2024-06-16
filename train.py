@@ -22,7 +22,7 @@ if __name__ == '__main__':
     # parse command line arguments
     parser = argparse.ArgumentParser('training script')
     parser.add_argument('--path', '-p', help="The path to the experiment folder where the configuration sheet, network weights, and other results are stored.", type=str, required=True)
-    parser.add_argument('--save-interval', '-s', help="Save weights and optimizer after each n epoches if test loss improves.", type=int, default=1)
+    parser.add_argument('--save-interval', '-s', help="Save weights and optimizer after each n epoches if test loss improves.", type=int, default=10)
     args = parser.parse_args()
 
     # load options

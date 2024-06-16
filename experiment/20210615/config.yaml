@@ -21,7 +21,10 @@ loss:
   args: {}
 metric:
   MAE:
-    name: 'MAELoss'
+    name: 'L1Loss'
+    args: {}
+  MSE:
+    name: 'MSELoss'
     args: {}
 optimizer: 
   name: 'SGD'

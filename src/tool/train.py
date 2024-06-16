@@ -6,12 +6,16 @@ import pandas as pd
 from tqdm.auto import tqdm
 from yacs.config import CfgNode
 
+from src.tool.registry import METRIC_REGISTRY
+
 def train_step(
+        logs: dict,
         model: torch.nn.Module, 
         dataloader: torch.utils.data.DataLoader, 
         loss_fn: torch.nn.Module, 
         optimizer: torch.optim.Optimizer,
-        device: torch.device) -> Tuple[float, float]:
+        device: torch.device,
+        ):
     # put model in train mode
     model.train()
     train_loss = 0
@@ -30,19 +34,25 @@ def train_step(
         loss.backward()
         optimizer.step()
 
-    # return metric
+    # append loss
     train_loss = train_loss / len(dataloader)
-    return train_loss
+    logs['train_loss'].append(train_loss)
 
 
 def test_step(
+        logs: dict,
         model: torch.nn.Module, 
         dataloader: torch.utils.data.DataLoader, 
         loss_fn: torch.nn.Module,
-        device: torch.device) -> Tuple[float, float]:
+        device: torch.device,
+        metric_dict: dict,
+        ):
     # put model in eval mode
     model.eval() 
     test_loss = 0
+
+    for key, metric_fn in metric_dict.items():
+        logs[key].append(0)
 
     # turn on inference context manager
     with torch.inference_mode():
@@ -51,15 +61,22 @@ def test_step(
             X, y = X.to(device), y.to(device)
 
             # forward pass
-            test_pred_logits = model(X)
+            y_pred = model(X)
 
             # loss calculation
-            loss = loss_fn(test_pred_logits, y)
+            loss = loss_fn(y_pred, y)
             test_loss += loss.item()
 
-    # return metric
+            # metric calculation
+            for key, metric_fn in metric_dict.items():
+                logs[key][-1] += metric_fn(y, y_pred).item()
+
+    # append loss & metrics
     test_loss = test_loss / len(dataloader)
-    return test_loss
+    logs['test_loss'].append(test_loss)
+
+    for key, metric_fn in metric_dict.items():
+        logs[key][-1] = logs[key][-1] / len(dataloader)
 
 
 def log_step(
@@ -111,26 +128,18 @@ def train_loop(
         'test_loss': [],
     }
 
+    # metric dict
+    metric_dict = {}
+
+    for key, value in opt.metric.items():
+        metric_dict[key] = METRIC_REGISTRY[value.name](**value.args)
+        logs[key] = []
+
+    # training loop
     for epoch in tqdm(range(opt.optimizer.epoch)):
-        train_loss = train_step(
-            model=model,
-            dataloader=train_dataloader,
-            loss_fn=loss_fn,
-            optimizer=optimizer,
-            device=device,
-            )
-        
-        test_loss = test_step(
-            model=model,
-            dataloader=test_dataloader,
-            loss_fn=loss_fn,
-            device=device,
-            )
-        
-        # save logs and states
         logs['epoch'].append(epoch)
-        logs['train_loss'].append(train_loss)
-        logs['test_loss'].append(test_loss)
+        train_step(logs, model, train_dataloader, loss_fn, optimizer, device)
+        test_step(logs, model, test_dataloader, loss_fn, device, metric_dict)        
         log_step(opt, logs, model, optimizer)
 
     return logs
