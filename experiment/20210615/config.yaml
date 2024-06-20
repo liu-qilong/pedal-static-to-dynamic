@@ -1,13 +1,12 @@
 train_script: 'BasicTrainScript'
-save_interval: 10
 device_select: 'auto'
-use_pretrain: True
+use_pretrain: False
 dataset:
   name: 'Pedar_Dataset_static2dynamic'
   train_ratio: 0.8
   args:
-    pedar_static: 'data/processed/pedar_static.pkl'
-    pedar_dynamic: 'data/processed/pedar_dynamic.pkl'
+    pedar_static_path: 'data/processed/pedar_static.pkl'
+    pedar_dynamic_path: 'data/processed/pedar_dynamic.pkl'
     sense_range: 600
 dataloader:
   name: 'DataLoader'
@@ -18,7 +17,7 @@ model:
   name: 'MLP'
   args:
     input_size: 198
-    hidden_size: 256
+    hidden_size: 1024
     output_size: 198
 loss:
   name: 'MSELoss'

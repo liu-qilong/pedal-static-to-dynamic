@@ -30,6 +30,7 @@ class BasicTrainScript():
             'epoch': [],
             'train_loss': [],
             'test_loss': [],
+            'train_std': [],
         }
 
         # init metric dict
@@ -40,14 +41,14 @@ class BasicTrainScript():
             self.logs[key] = []
 
     def load_data(self):
-        self.full_dataset = DATASET_REGISTRY[self.opt.dataset.name](**self.opt.dataset.args)
+        self.full_dataset = DATASET_REGISTRY[self.opt.dataset.name](device = self.device, **self.opt.dataset.args)
         self.train_dataset, self.test_dataset = random_split(self.full_dataset, [self.opt.dataset.train_ratio, 1 - self.opt.dataset.train_ratio])
 
         self.train_dataloader = DATALOADER_REGISTRY[self.opt.dataloader.name](self.train_dataset, **self.opt.dataloader.args)
         self.test_dataloader = DATALOADER_REGISTRY[self.opt.dataloader.name](self.test_dataset, **self.opt.dataloader.args)
 
     def train_prep(self):
-        self.model = MODEL_REGISTRY[self.opt.model.name](**self.opt.model.args).to(self.device)
+        self.model = MODEL_REGISTRY[self.opt.model.name](device=self.device, **self.opt.model.args)
         self.loss_fn = LOSS_REGISTRY[self.opt.loss.name](**self.opt.loss.args)
         self.optimizer = OPTIMIZER_REGISTRY[self.opt.optimizer.name](**self.opt.optimizer.args, params=self.model.parameters())
 
@@ -61,21 +62,20 @@ class BasicTrainScript():
             self._train_step()
             self._test_step()
             self._log_step()
-            pdar.set_description(f'epoch {epoch} | train_loss {self.logs["train_loss"][-1]:.4f} | test_loss {self.logs["test_loss"][-1]:.4f}')
+            pdar.set_description(f'epoch {epoch} | train_loss {self.logs["train_loss"][-1]:.4f} | test_loss {self.logs["test_loss"][-1]:.4f} |  train_std {self.logs["train_std"][-1]:.4f}')
 
     def _train_step(self):
         # put model in train mode
         self.model.train()
         train_loss = 0
+        train_std = 0
 
-        for batch, (X, y) in enumerate(self.train_dataloader):
-            # send data to device
-            X, y = X.to(self.device), y.to(self.device)
-
+        for batch, (x, y) in enumerate(self.train_dataloader):
             # forward pass
-            y_pred = self.model(X)
+            y_pred = self.model(x)
             loss = self.loss_fn(y_pred, y)
             train_loss += loss.item() 
+            train_std += y_pred.std().item()
 
             # loss backward
             self.optimizer.zero_grad()
@@ -83,8 +83,8 @@ class BasicTrainScript():
             self.optimizer.step()
 
         # append loss
-        train_loss = train_loss / len(self.train_dataloader)
-        self.logs['train_loss'].append(train_loss)
+        self.logs['train_loss'].append(train_loss / len(self.train_dataloader))
+        self.logs['train_std'].append(train_std / len(self.train_dataloader))
 
     def _test_step(self):
         # put model in eval mode
@@ -97,9 +97,6 @@ class BasicTrainScript():
         # turn on inference context manager
         with torch.inference_mode():
             for batch, (X, y) in enumerate(self.test_dataloader):
-                # send data to target device
-                X, y = X.to(self.device), y.to(self.device)
-
                 # forward pass
                 y_pred = self.model(X)
 
@@ -112,8 +109,7 @@ class BasicTrainScript():
                     self.logs[key][-1] += metric_fn(y, y_pred).item()
 
         # append loss & metrics
-        test_loss = test_loss / len(self.test_dataloader)
-        self.logs['test_loss'].append(test_loss)
+        self.logs['test_loss'].append(test_loss / len(self.test_dataloader))
 
         for key, metric_fn in self.metric_dict.items():
             self.logs[key][-1] = self.logs[key][-1] / len(self.test_dataloader)
@@ -122,14 +118,10 @@ class BasicTrainScript():
         # print and save logs
         epoch = self.logs['epoch'][-1]
 
-        # save logs, model, and optimizer if test loss is improved
-        if epoch == 0:
-            is_improved = True
-        else:
-            is_improved = self.logs['test_loss'][-1] < min(self.logs['test_loss'][:-1])
+        # save logs
+        pd.DataFrame(self.logs).to_csv(Path(self.opt.path) / 'logs.csv', index=False)
 
-        if is_improved and (epoch % self.opt.save_interval == 0 or epoch == self.opt.optimizer.epochs - 1):
-            # torch.save(logs, Path(path) / 'logs.pth')
-            pd.DataFrame(self.logs).to_csv(Path(self.opt.path) / 'logs.csv', index=False)
+        # save model and optimizer if test loss is improved
+        if epoch == 0 or self.logs['test_loss'][-1] < min(self.logs['test_loss'][:-1]):
             torch.save(self.model.state_dict(), Path(self.opt.path) / 'model.pth')
             torch.save(self.optimizer.state_dict(), Path(self.opt.path) / 'optimizer.pth')
